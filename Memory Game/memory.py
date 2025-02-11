@@ -3,7 +3,6 @@ import sys
 import random
 import os
 import csv
-import keyboard
 
 pygame.init()
 pygame.mixer.init()
@@ -576,9 +575,6 @@ def game_loop():
         random.shuffle(unused_questions)
         used_questions.clear()  # Clear the used questions
 
-    # Initialize the sound delay timer
-    sound_delay = 3000  # Delay in milliseconds (3 seconds)
-    sound_timer = pygame.time.get_ticks()  # Set the timer once before the loop
 
     while running:
         screen.fill(BLACK)
@@ -607,10 +603,6 @@ def game_loop():
         question_text = question_data["question"]
         correct_answer = question_data["answer"]
 
-        # Play the sound after the delay
-        if pygame.time.get_ticks() - sound_timer >= sound_delay:
-            #pause_sound.play()  # Play the sound
-            sound_timer = pygame.time.get_ticks()  # Reset the sound timer after playing
 
         # Get user input, loop until correct answer
         user_answer = ""
