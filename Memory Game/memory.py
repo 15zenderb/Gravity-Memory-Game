@@ -37,7 +37,7 @@ lives = 5
 questions_answered = 0
 game_over = False
 fall_speed = level * 0.1
-questions_per_level = 2
+questions_per_level = 5
 levels_enabled = True
 
 
@@ -216,9 +216,9 @@ def settings_menu():
     settings = [
         {"name": "Lives", "value": lambda: f"{lives}", "min": 1, "max": 10, "step": 1, "var": "lives"},
         {"name": "Levels Enabled", "value": lambda: "Yes" if levels_enabled else "No", "toggle": True, "var": "levels_enabled"},
-        {"name": "Questions Per Level", "value": lambda: display_questions_per_level(), "min": 1, "max": 20, "step": 1, "var": "questions_per_level", "disabled": lambda: not levels_enabled},
-        {"name": "Fall Speed", "value": lambda: f"{fall_speed}", "min": 1, "max": 10, "step": 0.2, "var": "fall_speed"},
-        {"name": "Volume", "value": lambda: f"{int(volume * 100)}%", "min": 0.0, "max": 1.0, "step": 0.1, "var": "volume"},
+        {"name": "Questions Per Level", "value": lambda: display_questions_per_level(), "min": 1, "max": 50, "step": 1, "var": "questions_per_level", "disabled": lambda: not levels_enabled},
+        {"name": "Fall Speed", "value": lambda: f"{fall_speed:.2f}", "min": 0.1, "max": 10, "step": 0.05, "var": "fall_speed"},
+        {"name": "Volume", "value": lambda: f"{int(volume * 100)}%" if volume < 1.0 else "100%", "min": 0.0, "max": 1.0, "step": 0.1, "var": "volume"},
     ]
     
     def get_next_index(current_index, direction):
@@ -602,7 +602,7 @@ def get_user_input(question, y):
                         score -= 1
                 elif event.key == pygame.K_BACKSPACE:
                     input_text = input_text[:-1]
-                elif len(input_text) < 20:
+                elif len(input_text) < 50:
                     input_text += event.unicode
             if event.type == pygame.MOUSEBUTTONDOWN:
                 if pause_button_rect.collidepoint(event.pos):
