@@ -18,6 +18,8 @@ GREEN = (0, 255, 0)
 RED = (255, 0, 0)
 DARK_RED = (139, 0, 0)
 HIGHLIGHT = (0, 0, 255)
+YELLOW = (255, 255, 0)
+GRAY = (128, 128, 128)
 
 font = pygame.font.SysFont('Courier New', 36)
 question_font = pygame.font.SysFont('Courier New', 36)
@@ -25,9 +27,6 @@ score_font = pygame.font.SysFont('Courier New', 48)
 menu_font = pygame.font.SysFont('Courier New', 28)
 fun_font = pygame.font.SysFont('Comic Sans MS', 72)
 new_font = pygame.font.SysFont('Arial', 36)
-
-import os
-import pygame
 
 base_dir = os.path.dirname(__file__)
 
@@ -37,6 +36,10 @@ level = 1
 lives = 5
 questions_answered = 0
 game_over = False
+fall_speed = level * 0.1
+questions_per_level = 2
+levels_enabled = True
+
 
 all_questions = []
 unused_questions = []
@@ -198,8 +201,94 @@ def display_text(text, x, y, font, color, center=False):
         x = (screen_width - label.get_width()) // 2
     screen.blit(label, (x, y))
 
+def settings_menu():
+    settings_running = True
+    global fall_speed, questions_per_level, lives, levels_enabled
+    volume = pygame.mixer.music.get_volume()
+    selected_index = 0
+    
+    def display_questions_per_level():
+        # Return "Infinite" as a string to display in the settings menu
+        if questions_per_level == -1:
+            return "Infinite"
+        return str(questions_per_level)
+
+    settings = [
+        {"name": "Lives", "value": lambda: f"{lives}", "min": 1, "max": 10, "step": 1, "var": "lives"},
+        {"name": "Levels Enabled", "value": lambda: "Yes" if levels_enabled else "No", "toggle": True, "var": "levels_enabled"},
+        {"name": "Questions Per Level", "value": lambda: display_questions_per_level(), "min": 1, "max": 20, "step": 1, "var": "questions_per_level", "disabled": lambda: not levels_enabled},
+        {"name": "Fall Speed", "value": lambda: f"{fall_speed}", "min": 1, "max": 10, "step": 0.2, "var": "fall_speed"},
+        {"name": "Volume", "value": lambda: f"{int(volume * 100)}%", "min": 0.0, "max": 1.0, "step": 0.1, "var": "volume"},
+    ]
+    
+    def get_next_index(current_index, direction):
+        next_index = (current_index + direction) % len(settings)
+        while "disabled" in settings[next_index] and settings[next_index]["disabled"]():
+            next_index = (next_index + direction) % len(settings)
+        return next_index
+    
+    while settings_running:
+        screen.fill(BLACK)
+        display_text("Settings", screen_width // 2, 100, fun_font, WHITE, center=True)
+        
+        y_offset = screen_height // 2 - (len(settings) * 25)
+        
+        left_column_width = screen_width // 2 - 200  # Set a reasonable distance for left column
+        right_column_width = screen_width // 2 + 200  # Set a reasonable distance for right column
+        
+        for i, setting in enumerate(settings):
+            text = setting["name"]
+            value_text = f"< {setting['value']()} >"
+            disabled = "disabled" in setting and setting["disabled"]()
+            color = GRAY if disabled else (YELLOW if i == selected_index else WHITE)
+            
+            # Calculate positions to center text in each column
+            left_x = left_column_width - (new_font.size(text)[0] // 2)
+            right_x = right_column_width - (new_font.size(value_text)[0] // 2)
+
+            display_text(text, left_x, y_offset, new_font, color, center=False)
+            display_text(value_text, right_x, y_offset, new_font, color, center=False)
+            
+            y_offset += 50
+        
+        display_text("Press 'Esc' to return", screen_width // 2, screen_height - 50, new_font, WHITE, center=True)
+        pygame.display.update()
+        
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    settings_running = False
+                elif event.key in (pygame.K_UP, pygame.K_DOWN):
+                    selected_index = get_next_index(selected_index, 1 if event.key == pygame.K_DOWN else -1)
+                elif event.key in (pygame.K_LEFT, pygame.K_RIGHT):
+                    setting = settings[selected_index]
+                    var_name = setting["var"]
+                    if "toggle" in setting:
+                        globals()[var_name] = not globals()[var_name]
+                        if var_name == "levels_enabled" and not globals()[var_name]:
+                            # If levels are disabled, set questions_per_level to "infinite" (-1)
+                            questions_per_level = -1
+                    elif "min" in setting and "max" in setting:
+                        step = setting["step"] * (1 if event.key == pygame.K_RIGHT else -1)
+                        if var_name == "volume":
+                            volume = max(setting["min"], min(setting["max"], volume + step))
+                            pygame.mixer.music.set_volume(volume)
+                        elif not ("disabled" in setting and setting["disabled"]()):
+                            # Set the value to "infinite" (e.g., -1) if Levels are disabled
+                            if var_name == "questions_per_level" and not levels_enabled:
+                                questions_per_level = -1  # Store "infinite" as -1 internally
+                            else:
+                                globals()[var_name] = max(setting["min"], min(setting["max"], globals()[var_name] + step))
+
+
+
+
 def start_screen():
-    pygame.mixer.music.load(os.path.join(sounds_dir, "start screen music.wav"))  # Optional background music for start screen
+    pygame.mixer.music.load(os.path.join(sounds_dir, "start screen music.wav"))
     pygame.mixer.music.play(-1)
 
     astronaut_background = None
@@ -218,30 +307,18 @@ def start_screen():
             bg_y = (screen_height - bg_height) // 2
             screen.blit(astronaut_background, (bg_x, bg_y))
 
-        title_text = "Galactic Recall Quiz Game"
-        title_label = fun_font.render(title_text, True, WHITE)
-        title_shadow = fun_font.render(title_text, True, (50, 50, 50))
-        screen.blit(title_shadow, (25, 20))
+        title_label = fun_font.render("Galactic Recall Quiz Game", True, WHITE)
         screen.blit(title_label, (20, 15))
 
-        start_text = "Press 'Enter' to Start"
-        quit_text = "Press 'Esc' to Quit"
-        high_scores_text = "Press 'H' for High Scores"
-        start_label = new_font.render(start_text, True, WHITE)
-        quit_label = new_font.render(quit_text, True, WHITE)
-        high_scores_label = new_font.render(high_scores_text, True, WHITE)
-
-        start_shadow = new_font.render(start_text, True, (50, 50, 50))
-        quit_shadow = new_font.render(quit_text, True, (50, 50, 50))
-        high_scores_shadow = new_font.render(high_scores_text, True, (50, 50, 50))
-
-        screen.blit(start_shadow, (22, 115))
-        screen.blit(quit_shadow, (22, 165))
-        screen.blit(high_scores_shadow, (22, 215))
-
+        start_label = new_font.render("Press 'Enter' to Start", True, WHITE)
+        quit_label = new_font.render("Press 'Esc' to Quit", True, WHITE)
+        high_scores_label = new_font.render("Press 'H' for High Scores", True, WHITE)
+        settings_label = new_font.render("Press 'S' for Settings", True, WHITE)
+        
         screen.blit(start_label, (20, 120))
         screen.blit(quit_label, (20, 170))
         screen.blit(high_scores_label, (20, 220))
+        screen.blit(settings_label, (20, 270))
 
         pygame.display.update()
 
@@ -258,7 +335,10 @@ def start_screen():
                     pygame.quit()
                     sys.exit()
                 elif event.key == pygame.K_h:
-                    display_high_scores()  # Show high scores
+                    display_high_scores()
+                elif event.key == pygame.K_s:
+                    settings_menu()
+
 
 
 def display_pause():
@@ -286,9 +366,6 @@ def display_pause():
                     return
                 elif event.key == pygame.K_EQUALS:
                     end_game()
-
-
-
 
 
 def end_game():
@@ -372,12 +449,11 @@ def load_questions():
     return questions     
 
 def get_user_input(question, y):
-    global score, lives, correct_answer, question_text
+    global score, lives, correct_answer, question_text, fall_speed
     input_text = ''
     active = True
     cursor_visible = True
     cursor_timer = 0
-    fall_speed = level * 0.1
     text_fall_position = max(y, 50)
 
     max_question_width = screen_width * 0.3  # Limit text width to 60% of screen width
@@ -555,7 +631,7 @@ def get_user_input(question, y):
         
         
 def game_loop():
-    global score, incorrect_answers, level, questions_answered, game_over, used_questions, unused_questions, all_questions, correct_answer, question_text, lives
+    global score, incorrect_answers, level, questions_answered, game_over, used_questions, unused_questions, all_questions, correct_answer, question_text, lives, questions_per_level
     running = True
 
     # Start background music
@@ -614,7 +690,7 @@ def game_loop():
                 correct_sound.play()
                 questions_answered += 1
 
-            if questions_answered == 2:  # to be modified later
+            if questions_answered == questions_per_level and levels_enabled == True:  # to be modified later
                 level += 1
                 text_surface = score_font.render(f"Level {level} Complete!", True, WHITE)
                 text_rect = text_surface.get_rect(center=(screen_width // 2, screen_height // 2))
