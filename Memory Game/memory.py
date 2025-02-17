@@ -203,7 +203,7 @@ def display_text(text, x, y, font, color, center=False):
 
 def settings_menu():
     settings_running = True
-    global fall_speed, questions_per_level, lives, levels_enabled
+    global fall_speed, questions_per_level, lives, levels_enabled, new_lives
     volume = pygame.mixer.music.get_volume()
     selected_index = 0
     
@@ -214,7 +214,7 @@ def settings_menu():
         return str(questions_per_level)
 
     settings = [
-        {"name": "Lives", "value": lambda: f"{lives}", "min": 1, "max": 10, "step": 1, "var": "lives"},
+        {"name": "Lives", "value": lambda: f"{lives}", "min": 1, "max": 9999999, "step": 1, "var": "lives"},
         {"name": "Levels Enabled", "value": lambda: "Yes" if levels_enabled else "No", "toggle": True, "var": "levels_enabled"},
         {"name": "Questions Per Level", "value": lambda: display_questions_per_level(), "min": 1, "max": 50, "step": 1, "var": "questions_per_level", "disabled": lambda: not levels_enabled},
         {"name": "Fall Speed", "value": lambda: f"{fall_speed:.2f}", "min": 0.1, "max": 10, "step": 0.05, "var": "fall_speed"},
@@ -283,6 +283,8 @@ def settings_menu():
                                 questions_per_level = -1  # Store "infinite" as -1 internally
                             else:
                                 globals()[var_name] = max(setting["min"], min(setting["max"], globals()[var_name] + step))
+        
+    new_lives = lives
 
 
 
@@ -371,7 +373,7 @@ def display_pause():
 def end_game():
     global score, incorrect_answers, game_over, lives
     game_over = True  # Set the game over flag
-    lives = 5
+    lives = new_lives
     pygame.mixer.music.stop()  # Stop the background music
     explosion_sound.stop()
     win_sound.play()  # Play the win sound
@@ -480,6 +482,7 @@ def get_user_input(question, y):
         display_text("Pause", 20, 20, menu_font, WHITE)
         display_text("Quit Game", 20, 60, menu_font, WHITE)
         display_text("Main Menu", 20, 100, menu_font, WHITE)
+        display_text("Skip Question", 20, 140, menu_font, WHITE)
         display_text(f"Score: {score}", 20, screen_height - 100, score_font, WHITE)
         display_text(f"Level: {level}", 20, screen_height - 50, score_font, WHITE)
         display_text(f"Lives: {lives}", 20, screen_height - 150, score_font, WHITE)
@@ -489,6 +492,7 @@ def get_user_input(question, y):
         pause_button_rect = pygame.Rect(18, 20, 100, 40)
         quit_button_rect = pygame.Rect(18, 60, 160, 40)
         main_menu_button_rect = pygame.Rect(18, 100, 160, 40)
+        skip_question_button_rect = pygame.Rect(18, 140, 240, 40)
 
         if pause_button_rect.collidepoint(mouse_x, mouse_y):
             pygame.draw.rect(screen, HIGHLIGHT, pause_button_rect, 2)
@@ -496,6 +500,8 @@ def get_user_input(question, y):
             pygame.draw.rect(screen, HIGHLIGHT, quit_button_rect, 2)
         if main_menu_button_rect.collidepoint(mouse_x, mouse_y):
             pygame.draw.rect(screen, HIGHLIGHT, main_menu_button_rect, 2)
+        if skip_question_button_rect.collidepoint(mouse_x, mouse_y):
+            pygame.draw.rect(screen, HIGHLIGHT, skip_question_button_rect, 2)
  
 
         if text_fall_position < screen_height - 200:
@@ -541,42 +547,9 @@ def get_user_input(question, y):
                 if (question_text, correct_answer) not in incorrect_answers:
                     incorrect_answers.append((question_text, correct_answer))
 
-                # Wrap the question and answer text
-                question_text_render = f"Question: {question_text}"
-                answer_text_render = f"Correct Answer: {correct_answer}"
+                display_answer()
 
-                # Wrap the question and answer text
-                max_width = screen_width - 40  # Max width for the text
-                wrapped_question_lines = wrap_text(question_text_render, question_font, max_width)
-                wrapped_answer_lines = wrap_text(answer_text_render, font, max_width)
-
-                # Calculate the initial y_offset for the text
-                center_y = screen_height // 2
-                y_offset = center_y - (len(wrapped_question_lines) * 20)  # Adjust based on number of lines
-
-                overlay = pygame.Surface((screen_width, screen_height), pygame.SRCALPHA)
-                overlay.fill((0, 0, 0, 180))
-                screen.blit(overlay, (0, 0))
-
-                # Display the wrapped question text
-                for line in wrapped_question_lines:
-                    question_width, question_height = question_font.size(line)
-                    question_x = (screen_width - question_width) // 2
-                    display_text(line, question_x, y_offset, question_font, WHITE)
-                    y_offset += 40  # Move down for the next line
-
-                # Display the wrapped answer text
-                for line in wrapped_answer_lines:
-                    answer_width, answer_height = font.size(line)
-                    answer_x = (screen_width - answer_width) // 2
-                    display_text(line, answer_x, y_offset, font, GREEN)
-                    y_offset += 40  # Move down for the next line
-
-                # Display the "-1 Life" text
-                display_text("-1 Life", (screen_width // 2) - (font.size("-1 Life")[0] / 2), 20, font, RED)
-
-                pygame.display.update()
-                wait_for_input()
+                
 
                 if lives < 1:
                     end_game()
@@ -613,6 +586,10 @@ def get_user_input(question, y):
                     sys.exit()
                 if main_menu_button_rect.collidepoint(event.pos):
                     start_screen()
+                if skip_question_button_rect.collidepoint(event.pos):
+                    incorrect_sound.play()
+                    score -= 1
+                    display_answer()
 
         if not asteroid_reached_bottom:
             text_fall_position = min(text_fall_position + fall_speed, screen_height - 200)
@@ -628,7 +605,43 @@ def get_user_input(question, y):
         if asteroid_reached_bottom and incorrect_sound_played:
             return input_text.strip()
 
-        
+def display_answer():
+        # Wrap the question and answer text
+    question_text_render = f"Question: {question_text}"
+    answer_text_render = f"Correct Answer: {correct_answer}"
+
+    # Wrap the question and answer text
+    max_width = screen_width - 40  # Max width for the text
+    wrapped_question_lines = wrap_text(question_text_render, question_font, max_width)
+    wrapped_answer_lines = wrap_text(answer_text_render, font, max_width)
+
+    # Calculate the initial y_offset for the text
+    center_y = screen_height // 2
+    y_offset = center_y - (len(wrapped_question_lines) * 20)  # Adjust based on number of lines
+
+    overlay = pygame.Surface((screen_width, screen_height), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 180))
+    screen.blit(overlay, (0, 0))
+
+    # Display the wrapped question text
+    for line in wrapped_question_lines:
+        question_width, question_height = question_font.size(line)
+        question_x = (screen_width - question_width) // 2
+        display_text(line, question_x, y_offset, question_font, WHITE)
+        y_offset += 40  # Move down for the next line
+
+    # Display the wrapped answer text
+    for line in wrapped_answer_lines:
+        answer_width, answer_height = font.size(line)
+        answer_x = (screen_width - answer_width) // 2
+        display_text(line, answer_x, y_offset, font, GREEN)
+        y_offset += 40  # Move down for the next line
+
+    # Display the "-1 Life" text
+    display_text("-1 Life", (screen_width // 2) - (font.size("-1 Life")[0] / 2), 20, font, RED)\
+    
+    pygame.display.update()
+    wait_for_input()
         
 def game_loop():
     global score, incorrect_answers, level, questions_answered, game_over, used_questions, unused_questions, all_questions, correct_answer, question_text, lives, questions_per_level
