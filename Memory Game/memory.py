@@ -283,7 +283,7 @@ def settings_menu():
 
             y_offset += 50
 
-        display_text("Press 'Esc' to return", screen_width // 2, screen_height - 50, new_font, WHITE, center=True)
+        display_text("Use arrow keys to adjust. Press 'Esc' to return", screen_width // 2, screen_height - 50, new_font, WHITE, center=True)
         pygame.display.update()
         
         for event in pygame.event.get():
