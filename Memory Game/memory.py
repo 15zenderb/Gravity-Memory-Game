@@ -17,7 +17,7 @@ BLACK = (0, 0, 0)
 GREEN = (0, 255, 0)
 RED = (255, 0, 0)
 DARK_RED = (139, 0, 0)
-HIGHLIGHT = (0, 0, 255)
+BLUE = (0, 0, 255)
 YELLOW = (255, 255, 0)
 GRAY = (128, 128, 128)
 
@@ -39,6 +39,7 @@ game_over = False
 fall_speed = level * 0.1
 questions_per_level = 5
 levels_enabled = True
+skipped_question = False
 
 
 all_questions = []
@@ -60,7 +61,7 @@ images_dir = os.path.join(base_dir, "assets","images")
 asteroid_path = os.path.join(images_dir, "Asteroid.png")
 asteroid_img = pygame.image.load(asteroid_path).convert_alpha()
 asteroid_img = pygame.transform.scale(asteroid_img, (300, 300))  # Resize to 300x300 pixels
-pause_bg = pygame.image.load(os.path.join(images_dir, "pause_background.jpg"))
+pause_bg = pygame.surfarray.make_surface(pygame.surfarray.pixels3d(pygame.image.load(os.path.join(images_dir, "pause_background.jpg"))) * 0.5)
 
 
 background = None
@@ -139,21 +140,6 @@ def load_background():
         except FileNotFoundError:
             print("Background image not found!")
 
-def load_high_scores():
-    high_scores = []
-    try:
-        high_scores_file_path = os.path.join(base_dir, "high_scores.csv")
-        if os.path.exists(high_scores_file_path):
-            with open(high_scores_file_path, mode="r", encoding="utf-8") as file:
-                csv_reader = csv.reader(file)
-                for row in csv_reader:
-                    if len(row) == 2: 
-                        name, score = row
-                        high_scores.append((name, int(score)))
-    except FileNotFoundError:
-        print("High scores file not found!")
-    high_scores.sort(key=lambda x: x[1], reverse=True) 
-    return high_scores
 
 def display_high_scores():
     high_scores = load_high_scores()
@@ -201,12 +187,19 @@ def display_text(text, x, y, font, color, center=False):
         x = (screen_width - label.get_width()) // 2
     screen.blit(label, (x, y))
 
+
 def settings_menu():
     settings_running = True
     global fall_speed, questions_per_level, lives, levels_enabled, new_lives
-    volume = pygame.mixer.music.get_volume()
+    volume = 1.0  # Ensure volume starts at 100%
+    pygame.mixer.music.set_volume(volume)  # Apply the change
     selected_index = 0
-    
+
+    # Define the maximum values
+    max_fall_speed = 2  # Maximum fall speed
+    max_lives = 100  # Maximum lives (can be changed to a more reasonable number if needed)
+    max_questions_per_level = 100  # Maximum questions per level
+
     def display_questions_per_level():
         # Return "Infinite" as a string to display in the settings menu
         if questions_per_level == -1:
@@ -214,27 +207,39 @@ def settings_menu():
         return str(questions_per_level)
 
     settings = [
-        {"name": "Lives", "value": lambda: f"{lives}", "min": 1, "max": 9999999, "step": 1, "var": "lives"},
+        {"name": "Lives", "value": lambda: f"{lives}", "min": 1, "max": max_lives, "step": 1, "var": "lives"},
         {"name": "Levels Enabled", "value": lambda: "Yes" if levels_enabled else "No", "toggle": True, "var": "levels_enabled"},
-        {"name": "Questions Per Level", "value": lambda: display_questions_per_level(), "min": 1, "max": 50, "step": 1, "var": "questions_per_level", "disabled": lambda: not levels_enabled},
-        {"name": "Fall Speed", "value": lambda: f"{fall_speed:.2f}", "min": 0.1, "max": 10, "step": 0.05, "var": "fall_speed"},
+        {"name": "Questions Per Level", "value": lambda: display_questions_per_level(), "min": 1, "max": max_questions_per_level, "step": 1, "var": "questions_per_level", "disabled": lambda: not levels_enabled},
+        {"name": "Fall Speed", "value": lambda: f"{round(fall_speed * 100)}", "min": 0.05, "max": max_fall_speed, "step": 0.1, "var": "fall_speed"},
         {"name": "Volume", "value": lambda: f"{int(volume * 100)}%" if volume < 1.0 else "100%", "min": 0.0, "max": 1.0, "step": 0.1, "var": "volume"},
     ]
-    
+
     def get_next_index(current_index, direction):
         next_index = (current_index + direction) % len(settings)
         while "disabled" in settings[next_index] and settings[next_index]["disabled"]():
             next_index = (next_index + direction) % len(settings)
         return next_index
-    
+
+    def draw_slider(screen, x, y, min_value, max_value, current_value, width=200, height=10):
+        pygame.draw.rect(screen, GRAY, (x, y, width, height))  # Background
+        slider_pos = (current_value - min_value) / (max_value - min_value) * width
+        pygame.draw.rect(screen, YELLOW, (x + slider_pos - 5, y - 5, 10, height + 10))  # Slider knob
+
+    is_dragging = False  # To track if the user is dragging the slider
+    fall_speed_slider_y = None  # To store the y position of the Fall Speed text
+    questions_per_level_slider_y = None  # To store the y position of the "Questions Per Level" slider
+    lives_slider_y = None  # To store the y position of the "Lives" slider
+    volume_slider_y = None  # To store the y position of the "Volume" slider
+
     while settings_running:
-        screen.fill(BLACK)
+        screen.blit(pause_bg, (0, 0))  # Draw the background image (pause_bg)
+
         display_text("Settings", screen_width // 2, 100, fun_font, WHITE, center=True)
         
         y_offset = screen_height // 2 - (len(settings) * 25)
         
-        left_column_width = screen_width // 2 - 200  # Set a reasonable distance for left column
-        right_column_width = screen_width // 2 + 200  # Set a reasonable distance for right column
+        left_column_width = screen_width // 2 - 300  # Set a reasonable distance for left column
+        right_column_width = screen_width // 2 + 300  # Set a reasonable distance for right column
         
         for i, setting in enumerate(settings):
             text = setting["name"]
@@ -248,9 +253,36 @@ def settings_menu():
 
             display_text(text, left_x, y_offset, new_font, color, center=False)
             display_text(value_text, right_x, y_offset, new_font, color, center=False)
+
+            # Capture the y position for each slider
+            if "Fall Speed" in text:
+                fall_speed_slider_y = y_offset + 20  # Align slider with the "Fall Speed" text
+                slider_x = right_column_width - 300
+                draw_slider(screen, slider_x, fall_speed_slider_y, 0.05, max_fall_speed, fall_speed)
             
+            if "Questions Per Level" in text:
+                questions_per_level_slider_y = y_offset + 20  # Align slider with the "Questions Per Level" text
+                slider_x = right_column_width - 300
+                draw_slider(screen, slider_x, questions_per_level_slider_y, 1, max_questions_per_level, questions_per_level)
+
+            if "Lives" in text:
+                lives_slider_y = y_offset + 20  # Align slider with the "Lives" text
+                slider_x = right_column_width - 300
+                draw_slider(screen, slider_x, lives_slider_y, 1, max_lives, lives)
+
+            if "Volume" in text:
+                volume_slider_y = y_offset + 20  # Align slider with the "Volume" text
+                slider_x = right_column_width - 300
+                draw_slider(screen, slider_x, volume_slider_y, 0.0, 1.0, volume)  # Volume slider
+
+            # Check if mouse is over the "Levels Enabled" option and draw a blue box around it
+            if "Levels Enabled" in text:
+                level_toggle_rect = pygame.Rect(right_x - 5, y_offset, new_font.size(value_text)[0] + 10, 40)
+                if level_toggle_rect.collidepoint(pygame.mouse.get_pos()):
+                    pygame.draw.rect(screen, BLUE, level_toggle_rect, 2)  # Draw blue box when hovered
+
             y_offset += 50
-        
+
         display_text("Press 'Esc' to return", screen_width // 2, screen_height - 50, new_font, WHITE, center=True)
         pygame.display.update()
         
@@ -270,21 +302,77 @@ def settings_menu():
                     if "toggle" in setting:
                         globals()[var_name] = not globals()[var_name]
                         if var_name == "levels_enabled" and not globals()[var_name]:
-                            # If levels are disabled, set questions_per_level to "infinite" (-1)
-                            questions_per_level = -1
+                            questions_per_level = -1  # If levels are disabled, set questions_per_level to "infinite" (-1)
                     elif "min" in setting and "max" in setting:
                         step = setting["step"] * (1 if event.key == pygame.K_RIGHT else -1)
                         if var_name == "volume":
                             volume = max(setting["min"], min(setting["max"], volume + step))
                             pygame.mixer.music.set_volume(volume)
-                        elif not ("disabled" in setting and setting["disabled"]()):
-                            # Set the value to "infinite" (e.g., -1) if Levels are disabled
-                            if var_name == "questions_per_level" and not levels_enabled:
-                                questions_per_level = -1  # Store "infinite" as -1 internally
-                            else:
-                                globals()[var_name] = max(setting["min"], min(setting["max"], globals()[var_name] + step))
+                        elif var_name == "fall_speed":
+                            fall_speed = max(setting["min"], min(setting["max"], fall_speed + step))
+                        elif var_name == "questions_per_level":
+                            questions_per_level = round(max(setting["min"], min(setting["max"], questions_per_level + step)))
+                        elif var_name == "lives":
+                            lives = round(max(setting["min"], min(setting["max"], lives + step)))
         
+            # Handle mouse click on sliders to start dragging
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == 1:  # Left click
+                    x, y = pygame.mouse.get_pos()
+                    
+                    # Check if the click is within any of the slider areas
+                    if fall_speed_slider_y - 20 <= y <= fall_speed_slider_y + 20 and slider_x <= x <= slider_x + 200:
+                        is_dragging = True
+                        fall_speed = (x - slider_x) / 200 * (max_fall_speed - 0.05) + 0.05
+                        fall_speed = max(0.05, min(max_fall_speed, fall_speed))  # Clamp the value
+
+                    elif levels_enabled and questions_per_level_slider_y - 20 <= y <= questions_per_level_slider_y + 20 and slider_x <= x <= slider_x + 200:
+                        # Only allow interaction with the "Questions Per Level" slider if levels are enabled
+                        is_dragging = True
+                        questions_per_level = round((x - slider_x) / 200 * (max_questions_per_level - 1) + 1)
+                        questions_per_level = max(1, min(max_questions_per_level, questions_per_level))  # Clamp the value
+
+                    elif lives_slider_y - 20 <= y <= lives_slider_y + 20 and slider_x <= x <= slider_x + 200:
+                        is_dragging = True
+                        lives = round((x - slider_x) / 200 * (max_lives - 1) + 1)
+                        lives = max(1, min(max_lives, lives))  # Clamp the value
+
+                    elif volume_slider_y - 20 <= y <= volume_slider_y + 20 and slider_x <= x <= slider_x + 200:
+                        is_dragging = True
+                        volume = (x - slider_x) / 200 * 1.0  # Scale to the volume range
+                        volume = max(0.0, min(1.0, volume))  # Clamp the value
+                        pygame.mixer.music.set_volume(volume)
+
+                    # Toggle "Levels Enabled" on click
+                    if level_toggle_rect.collidepoint(x, y):
+                        levels_enabled = not levels_enabled
+                        if not levels_enabled:
+                            questions_per_level = -1  # Set questions to "infinite" when levels are disabled
+
+            # Handle mouse drag for sliders
+            if event.type == pygame.MOUSEMOTION:
+                if is_dragging:
+                    x, y = pygame.mouse.get_pos()
+                    if fall_speed_slider_y - 20 <= y <= fall_speed_slider_y + 20 and slider_x <= x <= slider_x + 200:
+                        fall_speed = (x - slider_x) / 200 * (max_fall_speed - 0.05) + 0.05
+                        fall_speed = max(0.05, min(max_fall_speed, fall_speed))  # Clamp the value
+                    elif questions_per_level_slider_y - 20 <= y <= questions_per_level_slider_y + 20 and slider_x <= x <= slider_x + 200:
+                        questions_per_level = round((x - slider_x) / 200 * (max_questions_per_level - 1) + 1)
+                        questions_per_level = max(1, min(max_questions_per_level, questions_per_level))  # Clamp the value
+                    elif lives_slider_y - 20 <= y <= lives_slider_y + 20 and slider_x <= x <= slider_x + 200:
+                        lives = round((x - slider_x) / 200 * (max_lives - 1) + 1)
+                        lives = max(1, min(max_lives, lives))  # Clamp the value
+                    elif volume_slider_y - 20 <= y <= volume_slider_y + 20 and slider_x <= x <= slider_x + 200:
+                        volume = (x - slider_x) / 200 * 1.0  # Scale to the volume range
+                        volume = max(0.0, min(1.0, volume))  # Clamp the value
+                        pygame.mixer.music.set_volume(volume)
+
+            # Stop dragging when mouse is released
+            if event.type == pygame.MOUSEBUTTONUP:
+                is_dragging = False
+
     new_lives = lives
+
 
 
 
@@ -314,13 +402,12 @@ def start_screen():
 
         start_label = new_font.render("Press 'Enter' to Start", True, WHITE)
         quit_label = new_font.render("Press 'Esc' to Quit", True, WHITE)
-        high_scores_label = new_font.render("Press 'H' for High Scores", True, WHITE)
+        #high_scores_label = new_font.render("Press 'H' for High Scores", True, WHITE) maybe later add high scores
         settings_label = new_font.render("Press 'S' for Settings", True, WHITE)
         
         screen.blit(start_label, (20, 120))
         screen.blit(quit_label, (20, 170))
-        screen.blit(high_scores_label, (20, 220))
-        screen.blit(settings_label, (20, 270))
+        screen.blit(settings_label, (20, 220))
 
         pygame.display.update()
 
@@ -336,8 +423,8 @@ def start_screen():
                 elif event.key == pygame.K_ESCAPE:
                     pygame.quit()
                     sys.exit()
-                elif event.key == pygame.K_h:
-                    display_high_scores()
+                #elif event.key == pygame.K_h: maybe later add high scores
+                    #display_high_scores()
                 elif event.key == pygame.K_s:
                     settings_menu()
 
@@ -379,6 +466,7 @@ def end_game():
     win_sound.play()  # Play the win sound
 
     screen.fill(BLACK)
+    screen.blit(pause_bg, (0, 0))  # Draw the background image (pause_bg)
     display_text(f"Game Over! Final Score: {score}", 0, screen_height // 4, score_font, WHITE, center=True)
     display_text("Incorrect Answers:", 0, screen_height // 2 - 50, font, WHITE, center=True)
 
@@ -451,7 +539,7 @@ def load_questions():
     return questions     
 
 def get_user_input(question, y):
-    global score, lives, correct_answer, question_text, fall_speed
+    global score, lives, correct_answer, question_text, fall_speed, skipped_question
     input_text = ''
     active = True
     cursor_visible = True
@@ -495,13 +583,13 @@ def get_user_input(question, y):
         skip_question_button_rect = pygame.Rect(18, 140, 240, 40)
 
         if pause_button_rect.collidepoint(mouse_x, mouse_y):
-            pygame.draw.rect(screen, HIGHLIGHT, pause_button_rect, 2)
+            pygame.draw.rect(screen, BLUE, pause_button_rect, 2)
         if quit_button_rect.collidepoint(mouse_x, mouse_y):
-            pygame.draw.rect(screen, HIGHLIGHT, quit_button_rect, 2)
+            pygame.draw.rect(screen, BLUE, quit_button_rect, 2)
         if main_menu_button_rect.collidepoint(mouse_x, mouse_y):
-            pygame.draw.rect(screen, HIGHLIGHT, main_menu_button_rect, 2)
+            pygame.draw.rect(screen, BLUE, main_menu_button_rect, 2)
         if skip_question_button_rect.collidepoint(mouse_x, mouse_y):
-            pygame.draw.rect(screen, HIGHLIGHT, skip_question_button_rect, 2)
+            pygame.draw.rect(screen, BLUE, skip_question_button_rect, 2)
  
 
         if text_fall_position < screen_height - 200:
@@ -589,10 +677,11 @@ def get_user_input(question, y):
                 if skip_question_button_rect.collidepoint(event.pos):
                     incorrect_sound.play()
                     score -= 1
+                    skipped_question = True
                     display_answer()
 
         if not asteroid_reached_bottom:
-            text_fall_position = min(text_fall_position + fall_speed, screen_height - 200)
+            text_fall_position = min(text_fall_position + (fall_speed), screen_height - 200)
 
         if cursor_visible:
             cursor_x = input_x + font.size(input_text)[0]
@@ -606,6 +695,7 @@ def get_user_input(question, y):
             return input_text.strip()
 
 def display_answer():
+    global skipped_question
         # Wrap the question and answer text
     question_text_render = f"Question: {question_text}"
     answer_text_render = f"Correct Answer: {correct_answer}"
@@ -638,7 +728,11 @@ def display_answer():
         y_offset += 40  # Move down for the next line
 
     # Display the "-1 Life" text
-    display_text("-1 Life", (screen_width // 2) - (font.size("-1 Life")[0] / 2), 20, font, RED)\
+    if skipped_question == True:
+        display_text("-1 Point", (screen_width // 2) - (font.size("-1 Life")[0] / 2), 20, font, RED)
+        skipped_question = False
+    else:
+        display_text("-1 Life", (screen_width // 2) - (font.size("-1 Life")[0] / 2), 20, font, RED)
     
     pygame.display.update()
     wait_for_input()
