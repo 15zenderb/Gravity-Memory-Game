@@ -61,7 +61,7 @@ images_dir = os.path.join(base_dir, "assets","images")
 asteroid_path = os.path.join(images_dir, "Asteroid.png")
 asteroid_img = pygame.image.load(asteroid_path).convert_alpha()
 asteroid_img = pygame.transform.scale(asteroid_img, (300, 300))  # Resize to 300x300 pixels
-pause_bg = pygame.surfarray.make_surface(pygame.surfarray.pixels3d(pygame.image.load(os.path.join(images_dir, "pause_background.jpg"))) * 0.5)
+pause_bg = pygame.image.load(os.path.join(images_dir, "pause_background.jpg"))
 
 
 background = None
